@@ -11,7 +11,7 @@
 int Offlinemodus = 0;       // 0=Blynk und WLAN wird benötigt 1=OfflineModus (ACHTUNG EINSTELLUNGEN NUR DIREKT IM CODE MÖGLICH)
 int debugmodus = 0;         // 0=Keine Seriellen Debug Werte 1=SeriellenDebug aktiv
 int Display = 2;            // 1=U8x8libm, 0=Deaktiviert, 2=Externes 128x64 Display
-int OnlyPID = 1;            // 1=Nur PID ohne Preinfussion, 0=PID + Preinfussion
+int OnlyPID = 0;            // 1=Nur PID ohne Preinfussion, 0=PID + Preinfussion
 int TempSensor = 2;         // 1=DS19B20; 2=TSIC306
 int Brewdetection = 1 ;     // 0=off ,1=Software
 int standby = 0 ;           // 0: Old rancilio not needed, 1: new one , E or V5 with standy, not used in the moment
@@ -402,6 +402,7 @@ boolean checkSensor(float tempInput){
 
 void setup() {
   Serial.begin(115200);
+  while (! Serial); // Wait untilSerial is ready
   /********************************************************
     Define trigger type
   ******************************************************/
@@ -441,7 +442,7 @@ void setup() {
     //display.begin(SSD1306_SWITCHCAPVCC, 0x3D);  // initialize with the I2C addr 0x3D (for the 128x64)
     display.clearDisplay();
   }
-  displaymessage("Version 1.6.3", "", Display);
+  displaymessage("Version 1.7.0 alpha", "", Display);
   delay(2000);
 
   /********************************************************
@@ -603,7 +604,7 @@ void setup() {
     movingaverage ini array
   ******************************************************/
   if (Brewdetection == 1) {
-    for (int thisReading = 0; thisReading <= numReadings; thisReading++) {
+    for (int thisReading = 0; thisReading < numReadings; thisReading++) {
       readingstemp[thisReading] = 0;
       readingstime[thisReading] = 0;
       readingchangerate[thisReading] = 0;
@@ -702,7 +703,7 @@ refreshTemp();
         //Serial.println("Brew");
         digitalWrite(pinRelayVentil, relayON);
         digitalWrite(pinRelayPumpe, relayON);
-        digitalWrite(pinRelayHeater, relayON);
+        //digitalWrite(pinRelayHeater, relayON);
       }
     } else {
       digitalWrite(pinRelayVentil, relayOFF);
