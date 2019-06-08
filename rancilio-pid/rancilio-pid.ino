@@ -20,10 +20,12 @@ int fallback = 1  ;          // 1: fallback auf eeprom Werte, wenn blynk nicht g
 int triggerType = LOW;// LOW = low trigger, HIGH = high trigger relay
 boolean OTA = true;                // true=activate update via OTA
 
+char auth[] = "blynkauthcode";
+char ssid[] = "wlanname";
+char pass[] = "wlanpass";
 
-
-//char blynkaddress[]  = "blynk.remoteapp.de" ;
- char blynkaddress[]  = "raspberrypi.local" ;
+char blynkaddress[]  = "blynk.remoteapp.de" ;
+// char blynkaddress[]  = "raspberrypi.local" ;
 
 /********************************************************
    Vorab-Konfig
