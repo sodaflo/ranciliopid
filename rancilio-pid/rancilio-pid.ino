@@ -20,12 +20,7 @@ int fallback = 1  ;          // 1: fallback auf eeprom Werte, wenn blynk nicht g
 int triggerType = LOW;// LOW = low trigger, HIGH = high trigger relay
 boolean OTA = true;                // true=activate update via OTA
 
-//char auth[] = "296da16b0626443caf96bff568be4ead"; //ich lokal
-char auth[] = "f1e490b08f7f498f8942dcbee8e8ac24"; //ich lokal test node gaggia
-//char auth[] = "df1989795361411c9f1f54a6aad23fc5"; //Markus
-char ssid[] = "FRITZ!Box 7560 TW";
-//char pass[] = "11"; // Andreas - test
-char pass[] = "73529858617456203989"; // Andreas
+
 
 //char blynkaddress[]  = "blynk.remoteapp.de" ;
  char blynkaddress[]  = "raspberrypi.local" ;
