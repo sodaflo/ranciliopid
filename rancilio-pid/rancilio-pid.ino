@@ -1,8 +1,9 @@
 /********************************************************
-   Version 1.7.4 MASTER (07.06.2019)
+   Version 1.8.1 BETA (10.06.2019)
   - Check the PIN Ports in the CODE!
-  - Find your changerate of the machine, can be wrong, test it!
-  - 
+  - Find your brewdetection changerate of the machine, can be wrong, test it!
+  - WE CHANGE THE PID WORKING MODE & PID PARAMETER FROM Ki to Tn and Kp zu Tv!
+  - VALUES BEFORE 1.8.0. have to be recalculated 
 ******************************************************/
 #include "Arduino.h"
 #include <EEPROM.h>
@@ -20,12 +21,15 @@ int fallback = 1  ;          // 1: fallback auf eeprom Werte, wenn blynk nicht g
 int triggerType = HIGH;// LOW = low trigger, HIGH = high trigger relay
 boolean OTA = true;                // true=activate update via OTA
 
-char auth[] = "blynkauthcode";
-char ssid[] = "wlanname";
-char pass[] = "wlanpass";
+char auth[] = "296da16b0626443caf96bff568be4ead"; //ich lokal rancilio
+//char auth[] = "f1e490b08f7f498f8942dcbee8e8ac24"; //ich lokal test node gaggia
+//char auth[] = "df1989795361411c9f1f54a6aad23fc5"; //Markus
+char ssid[] = "FRITZ!Box 7560 TW";
+//char pass[] = "11"; // Andreas - test
+char pass[] = "73529858617456203989"; // Andreas
 
-char blynkaddress[]  = "blynk.remoteapp.de" ;
-// char blynkaddress[]  = "raspberrypi.local" ;
+//char blynkaddress[]  = "blynk.remoteapp.de" ;
+ char blynkaddress[]  = "raspberrypi.local" ;
 
 /********************************************************
    Vorab-Konfig
@@ -77,13 +81,17 @@ int firstreading = 1 ;          // Ini of the field
    PID - Werte Brüherkennung Offline
 *****************************************************/
 
-double aggbp = 80 ;
-double aggbi = 0 ;
-double aggbd = 800;
+double aggbKp =  30 ;
+double aggbTn = 0 ;
+double aggbTv = 3;
+double aggbKi=aggbKp/aggbTn ; 
+double aggbKd=aggbTv*aggbKp ; 
 double brewtimersoftware = 45;    // 20-5 for detection
 double brewboarder = 150 ;        // border for the detection,
 // be carefull: to low: risk of wrong brew detection
 // and rising temperature
+
+boolean emergencyshutdown = false;
 
 /********************************************************
    Analog Schalter Read
@@ -176,10 +184,12 @@ double previousInput = 0;
 
 double setPoint = 95;
 float aggKp = 28.0 / acceleration;
-float aggKi = 0.08 / acceleration;
-double aggKd = 0 / acceleration;
-double startKp = 60;
+float aggTn = 100 / acceleration;
+float aggTv = 0 / acceleration;
+float startKp = 60;
 double starttemp = 85;
+double aggKi=aggKp/aggTn ; 
+double aggKd=aggTv*aggKp ; 
 
 
 PID bPID(&Input, &Output, &setPoint, aggKp, aggKi, aggKd, DIRECT);
@@ -223,9 +233,9 @@ WidgetBridge bridge1(V1);
 
 //Update Intervall zur App
 unsigned long previousMillis = 0;
-const long interval = 5000;
-
-//Update f�r Display
+const long interval = 1000;
+int blynksendcounter = 1;
+//Update für Display
 unsigned long previousMillisDisplay = 0;
 const long intervalDisplay = 500;
 
@@ -247,10 +257,10 @@ BLYNK_WRITE(V4) {
 }
 
 BLYNK_WRITE(V5) {
-  aggKi = param.asDouble();
+  aggTn = param.asDouble();
 }
 BLYNK_WRITE(V6) {
-  aggKd =  param.asDouble();
+  aggTv =  param.asDouble();
 }
 
 BLYNK_WRITE(V7) {
@@ -280,14 +290,14 @@ BLYNK_WRITE(V13)
 }
 BLYNK_WRITE(V30)
 {
-  aggbp = param.asDouble();//
+  aggbKp = param.asDouble();//
 }
 
 BLYNK_WRITE(V31) {
-  aggbi = param.asDouble();
+  aggbTn = param.asDouble();
 }
 BLYNK_WRITE(V32) {
-  aggbd =  param.asDouble();
+  aggbTv =  param.asDouble();
 }
 BLYNK_WRITE(V33) {
   brewtimersoftware =  param.asDouble();
@@ -295,7 +305,46 @@ BLYNK_WRITE(V33) {
 BLYNK_WRITE(V34) {
   brewboarder =  param.asDouble();
 }
+/********************************************************
+ VOID BLynk send Data
+*****************************************************/
 
+void blynksenddata() {
+      unsigned long currentMillis = millis();
+      if (currentMillis - previousMillis >= interval) {
+        previousMillis = currentMillis;
+        if (Offlinemodus == 0) {
+          if(Blynk.connected()){
+            Blynk.run();
+            blynksendcounter=1 ;
+            if (blynksendcounter == 1) {
+            Blynk.virtualWrite(V2, Input);
+            Blynk.syncVirtual(V2);
+            }
+            if (blynksendcounter == 1) {
+            Blynk.virtualWrite(V23, Output);
+            Blynk.syncVirtual(V23);
+            }
+//             if (blynksendcounter == 3) {
+//            Blynk.virtualWrite(V3, setPoint);
+//            Blynk.syncVirtual(V3);
+//            }
+//            if (blynksendcounter == 4) {
+//            Blynk.virtualWrite(V35, heatrateaverage);
+//            Blynk.syncVirtual(V35);
+//            }
+//            if (blynksendcounter == 5) {
+//            Blynk.virtualWrite(V36, heatrateaveragemin);
+//            Blynk.syncVirtual(V36);   
+//            blynksendcounter=0;
+//            }       
+          //  Blynk.virtualWrite(V43, debug_timediff);
+          //  Blynk.syncVirtual(V43);
+          //  debug_timediff = millis()-previousMillis ;
+         }
+        }
+      }
+}
 /********************************************************
   VOID Displayausgabe
 *****************************************************/
@@ -402,6 +451,14 @@ boolean checkSensor(float tempInput){
   return OK;
 }
 
+void temp_emergencyshutdown() {
+ if (Input > 130) { 
+ emergencyshutdown =  true ;
+ }
+   
+}
+
+
 void setup() {
   Serial.begin(115200);
   while (! Serial); // Wait untilSerial is ready
@@ -444,7 +501,7 @@ void setup() {
     //display.begin(SSD1306_SWITCHCAPVCC, 0x3D);  // initialize with the I2C addr 0x3D (for the 128x64)
     display.clearDisplay();
   }
-  displaymessage("Version 1.7.4 MASTER","06.06.2019", Display);
+  displaymessage("Version 1.8.1 BETA","10.06.2019", Display);
   delay(2000);
 
   /********************************************************
@@ -495,17 +552,17 @@ void setup() {
           EEPROM.begin(1024);
           Serial.println("Blynk is online, new values to eeprom");
           EEPROM.put(0, aggKp);
-          EEPROM.put(10, aggKi);
-          EEPROM.put(20, aggKd);
+          EEPROM.put(10, aggTn);
+          EEPROM.put(20, aggTv);
           EEPROM.put(30, setPoint);
           EEPROM.put(40, brewtime);
           EEPROM.put(50, preinfusion);
           EEPROM.put(60, preinfusionpause);
           EEPROM.put(70, startKp);
           EEPROM.put(80, starttemp);
-          EEPROM.put(90, aggbp);
-          EEPROM.put(100, aggbi);
-          EEPROM.put(110, aggbd);
+          EEPROM.put(90, aggbKp);
+          EEPROM.put(100, aggbTn);
+          EEPROM.put(110, aggbTv);
           EEPROM.put(120, brewtimersoftware);
           EEPROM.put(130, brewboarder);
           // eeprom schlie�en
@@ -526,17 +583,17 @@ void setup() {
         Serial.println(eepromcheckstring);
         if (isDigit(eepromcheckstring.charAt(1)) == true) {
           EEPROM.get(0, aggKp);
-          EEPROM.get(10, aggKi);
-          EEPROM.get(20, aggKd);
+          EEPROM.get(10, aggTn);
+          EEPROM.get(20, aggTv);
           EEPROM.get(30, setPoint);
           EEPROM.get(40, brewtime);
           EEPROM.get(50, preinfusion);
           EEPROM.get(60, preinfusionpause);
           EEPROM.get(70, startKp);
           EEPROM.get(80, starttemp);
-          EEPROM.get(90, aggbp);
-          EEPROM.get(100, aggbi);
-          EEPROM.get(110, aggbd);
+          EEPROM.get(90, aggbKp);
+          EEPROM.get(100, aggbTn);
+          EEPROM.get(110, aggbTv);
           EEPROM.get(120, brewtimersoftware);
           EEPROM.get(130, brewboarder);
         }
@@ -667,7 +724,7 @@ void loop() {
 ArduinoOTA.handle();  // For OTA
 
 refreshTemp();
-
+temp_emergencyshutdown();
   /********************************************************
     PreInfusion, Brew , if not Only PID
   ******************************************************/
@@ -722,8 +779,6 @@ refreshTemp();
   /********************************************************
     change of rate
   ******************************************************/
-
-
   //Sicherheitsabfrage
   if (!sensorError) {
     // Brew detecion == 1 software solution , == 2 hardware
@@ -734,35 +789,31 @@ refreshTemp();
     }
 
     if (Brewdetection == 1) {
-      if (heatrateaverage <= -brewboarder && brewboarder != 0 && timerBrewdetection == 0 ) {
+      // only pid
+      if (heatrateaverage <= -brewboarder && brewboarder != 0 && timerBrewdetection == 0 && OnlyPID == 1 ) {
+        //   Serial.println("Brewdetected") ;
+        timeBrewdetection = millis() ;
+        timerBrewdetection = 1 ;
+      } // bei Vollausbau
+        if (OnlyPID == 0 && brewswitch > 1000  ) {
         //   Serial.println("Brewdetected") ;
         timeBrewdetection = millis() ;
         timerBrewdetection = 1 ;
       }
     }
-    if (Input < starttemp && kaltstart) {
-      bPID.SetTunings(startKp, 0, 0);
-    } else {
-      bPID.SetTunings(aggKp, aggKi, aggKd);
-      kaltstart = false;
+    if (Input < 80) {
+      Output= 1000; 
     }
-    if ( millis() - timeBrewdetection  < brewtimersoftware * 1000 && timerBrewdetection == 1) {
-      bPID.SetTunings(aggbp, aggbi, aggbd) ;
-      //   Serial.println("PIDMODEBREW") ;
+    if (Input > 90) {
+      Output = 0;
     }
-
-    bPID.Compute();
-  
+    blynksenddata() ;
     //check if PID should run or not. If not, set to manuel and force output to zero
-    if (Onoff == 0 && pidMode == 1) {
-      pidMode = 0;
-      bPID.SetMode(pidMode);
-      Output = 0 ;
-    }else if (Onoff == 1 && pidMode == 0) {
-      pidMode = 1;
-      bPID.SetMode(pidMode);
+    if (emergencyshutdown == true )
+    {
+     Output = 0 ;
+     digitalWrite(pinRelayHeater, LOW);
     }
-  
     if (millis() - windowStartTime > windowSize) {
       windowStartTime += windowSize;
     }
@@ -773,6 +824,8 @@ refreshTemp();
     } else {
       digitalWrite(pinRelayHeater, HIGH);
       //Serial.println("Power on!");
+      if (Output > 900) { 
+      }
     }
 
     /********************************************************
@@ -782,7 +835,7 @@ refreshTemp();
     if (currentMillisDisplay - previousMillisDisplay >= intervalDisplay) {
       previousMillisDisplay = currentMillisDisplay;
 
-      if (Display == 1 && !sensorError) {
+      if (Display == 1 && !sensorError && !emergencyshutdown) {
 
         /********************************************************
            DISPLAY AUSGABE
@@ -824,7 +877,7 @@ refreshTemp();
         u8x8.setCursor(6, 3);
         u8x8.print(Output);
       }
-      if (Display == 2 && !sensorError) {
+      if (Display == 2 && !sensorError &&!emergencyshutdown) {
         /********************************************************
            DISPLAY AUSGABE
         ******************************************************/
@@ -832,67 +885,45 @@ refreshTemp();
         display.setTextColor(WHITE);
         display.clearDisplay();
         display.setCursor(0, 0);
-        display.print("Ist-Temp:");
-        display.print("  ");
-        display.println(Input);
-        display.print("Soll-Temp:");
-        display.print(" ");
-        display.println(setPoint);
-        display.print("PID-Outlet:");
-        display.println(Output/10);
-        display.print("PID:");
-        display.print(" ");
-        display.print(bPID.GetKp());
-        display.print(",");
-        display.print(bPID.GetKi());
-        display.print(",");
-        display.println(bPID.GetKd());
-        display.println();
-        display.print("Bezugszeit:");
+       display.print("Ist-T: ");
+     //  display.print("  ");
         display.setTextSize(2);
+        display.println(Input);
+        display.setTextSize(1);
+       display.print("Soll-T:");
+       display.setTextSize(2);
+    //    display.print("/");
+    //    display.print(" ");
+        display.print(setPoint);
+      //  display.print("PID-Outlet:");
+      //  display.println(Output/10);
+    //    display.print("PID:");
+     //   display.print(" ");
+     //   display.print(bPID.GetKp());
+     //   display.print(",");
+     //   display.print(bPID.GetKi());
+     //   display.print(",");
+     //   display.println(bPID.GetKd());
+     display.setTextSize(1);
+        display.println();
+        display.println();
+        display.println("Bezugszeit:");
+        display.setTextSize(2);
+        display.print("      ");
         display.print(bezugsZeit/1000);
-        display.print("/");
-        display.println(totalbrewtime/1000);
+     //   display.print("/");
+     //   display.println(totalbrewtime/1000);
         display.setTextSize(1);
         display.setCursor(0, 48);
-        display.print(preinfusion/1000);
-        display.print("/");
-        display.print(preinfusionpause/1000);
-        display.print("/");
-        display.print(brewtime/1000);
+        //display.print(preinfusion/1000);
+      //  display.print("/");
+     //   display.print(preinfusionpause/1000);
+      //  display.print("/");
+     //   display.print(brewtime/1000);
         display.display();
       }
 
     }
-  
-  /********************************************************
-        Sendet Daten zur App
-      ******************************************************/
-
-      unsigned long currentMillis = millis();
-      if (currentMillis - previousMillis >= interval) {
-        previousMillis = currentMillis;
-        if (debugmodus == 1)
-        {
-          Serial.print("runblynk");
-        }
-        if (Offlinemodus == 0) {
-          if(Blynk.connected()){
-            Blynk.run();
-            Blynk.virtualWrite(V2, Input);
-            Blynk.syncVirtual(V2);
-            Blynk.virtualWrite(V3, setPoint);
-            Blynk.syncVirtual(V3);
-            Blynk.virtualWrite(V23, Output);
-            Blynk.syncVirtual(V23);
-            Blynk.virtualWrite(V35, heatrateaverage);
-            Blynk.syncVirtual(V35);
-            Blynk.virtualWrite(V36, heatrateaveragemin);
-            Blynk.syncVirtual(V36);
-         }
-        }
-      }
-  
   } else if (sensorError) {
     
   //Deactivate PID
@@ -936,4 +967,13 @@ refreshTemp();
       u8x8.print(Input);
     }
   }
+   if (emergencyshutdown) {
+      display.setTextSize(1);
+      display.setTextColor(WHITE);
+      display.clearDisplay();
+      display.setCursor(0, 0);
+      display.print("Emergency Shutdown");
+      display.print("Temp > 130!");
+      display.display();
+   }
 }
