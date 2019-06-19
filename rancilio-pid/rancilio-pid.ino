@@ -55,6 +55,9 @@ const boolean ota = OTA;
 const char* auth = AUTH;
 const char* ssid = D_SSID;
 const char* pass = PASS;
+unsigned long lastWifiConnectionAttempt = millis();
+const unsigned long wifiConnectionDelay = 10000; // try to reconnect every 5 seconds
+unsigned int wifiReconnects = 0; //number of reconnects
 
 // OTA
 const char* OTAhost = OTAHOST;
@@ -210,7 +213,7 @@ int pidMode = 1; //1 = Automatic, 0 = Manual
 const unsigned int windowSize = 1000;
 unsigned int isrCounter = 0;  // counter for ISR
 unsigned long windowStartTime;
-double Input, Output, setPointTemp;	//
+double Input, Output, setPointTemp;  //
 double previousInput = 0;
 
 double setPoint = SETPOINT;
@@ -351,6 +354,28 @@ BLYNK_WRITE(V34) {
 
 
 /********************************************************
+  Check if Wifi is connected, if not reconnect
+*****************************************************/
+void checkWifi(){
+  if (Offlinemodus == 1) return;
+  int statusTemp = WiFi.status();
+  // check WiFi connection:
+  if (statusTemp != WL_CONNECTED) {
+    // (optional) "offline" part of code
+
+    // check delay:
+    if (millis() - lastWifiConnectionAttempt >= wifiConnectionDelay) {
+      lastWifiConnectionAttempt = millis();      
+      // attempt to connect to Wifi network:
+      WiFi.begin(ssid, pass); 
+      delay(5000);    //will not work without delay
+      wifiReconnects++;    
+    }
+    
+  }
+}
+
+/********************************************************
   Get Wifi signal strength and set bars for display
 *****************************************************/
 void getSignalStrength(){
@@ -394,7 +419,6 @@ void testEmergencyStop(){
 /********************************************************
   Displayausgabe
 *****************************************************/
-
 void displaymessage(String displaymessagetext, String displaymessagetext2) {
   if (Display == 2) {
     /********************************************************
@@ -420,10 +444,10 @@ void displaymessage(String displaymessagetext, String displaymessagetext2) {
   }
 
 }
+
 /********************************************************
   Moving average - brewdetection (SW)
 *****************************************************/
-
 void movAvg() {
   if (firstreading == 1) {
     for (int thisReading = 0; thisReading < numReadings; thisReading++) {
@@ -634,7 +658,7 @@ void printScreen() {
     u8x8.print(Output);
   }
   if (Display == 2 && !sensorError) {
-    getSignalStrength();
+    
     /*
     display.setTextSize(1);
     display.setTextColor(WHITE);
@@ -676,24 +700,33 @@ void printScreen() {
     display.display();
     */
 
-
+    
     display.setTextSize(1);
     display.setTextColor(WHITE);
     display.clearDisplay();
     display.setCursor(0, 0);
-    if (WiFi.status() == WL_CONNECTED){
-      display.drawBitmap(0,0,antenna_OK,8,8,WHITE);
-      for (int b=0; b <= bars; b++) {
-        display.drawFastVLine(5 + (b*2),8 - (b*2),b*2,WHITE);
+    if (Offlinemodus == 0) {
+      getSignalStrength();
+      if (WiFi.status() == WL_CONNECTED){
+        display.drawBitmap(0,0,antenna_OK,8,8,WHITE);
+        for (int b=0; b <= bars; b++) {
+          display.drawFastVLine(5 + (b*2),8 - (b*2),b*2,WHITE);
+        }
+      } else {
+        display.drawBitmap(0,0,antenna_NOK,8,8,WHITE);
+        display.setCursor(48, 0);
+        display.print("Reconect: ");
+        display.print(wifiReconnects);
+      }
+      if (Blynk.connected()){
+        display.drawBitmap(20,0,blynk_OK,11,8,WHITE);
+      } else {
+        display.drawBitmap(20,0,blynk_NOK,8,8,WHITE);
       }
     } else {
-      display.drawBitmap(0,0,antenna_NOK,8,8,WHITE);
+      display.print("Offlinemodus");
     }
-    if (Blynk.connected()){
-      display.drawBitmap(20,0,blynk_OK,11,8,WHITE);
-    } else {
-      display.drawBitmap(20,0,blynk_NOK,8,8,WHITE);
-    }
+
     display.println("");
     display.println("");
     display.print("S:");
@@ -877,6 +910,7 @@ void setup() {
         would try to act as both a client and an access-point and could cause
         network-issues with your other WiFi-devices on your WiFi-network. */
       WiFi.mode(WIFI_STA);
+      WiFi.persistent(false); //prevent writing unnecessary stuff into flash
       WiFi.begin(ssid, pass);
       DEBUG_print("Connecting to ");
       DEBUG_print(ssid);
@@ -1028,7 +1062,7 @@ void setup() {
 }
 
 void loop() {
-
+  /*
   ArduinoOTA.handle();  // For OTA
   // Disable interrupt it OTA is starting, otherwise it will not work
   ArduinoOTA.onStart([](){
@@ -1042,15 +1076,21 @@ void loop() {
   ArduinoOTA.onEnd([](){
     timer1_enable(TIM_DIV16, TIM_EDGE, TIM_SINGLE);
   });
+*/
+  if (WiFi.status() == WL_CONNECTED){
+    Blynk.run(); //Do Blynk magic stuff
+    wifiReconnects = 0;
+  } else {
+    checkWifi();
+  }
   
-  Blynk.run(); //Do Blynk magic stuff
   unsigned long startT;
   unsigned long stopT;
 
   refreshTemp();   //read new temperature values
-  testEmergencyStop();  // test if Temp is to high
+  testEmergencyStop();  // test if Temp is to high  
   brew();   //start brewing if button pressed
-    
+
   //check if PID should run or not. If not, set to manuel and force output to zero
   if (pidON == 0 && pidMode == 1) {
     pidMode = 0;
