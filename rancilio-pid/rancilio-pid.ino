@@ -6,7 +6,7 @@
 ******************************************************/
 
 // Debug mode is active if #define DEBUGMODE is set
-//#define DEBUGMODE
+#define DEBUGMODE
 
 #ifndef DEBUGMODE
 #define DEBUG_println(a)
@@ -108,11 +108,14 @@ double brewboarder = 150 ;        // border for the detection,
 const int PonE = PONE;
 // be carefull: to low: risk of wrong brew detection
 // and rising temperature
+unsigned long heatingTime = 0;
+unsigned long heatingStart = 0;
+double preHeatingOutput = 0;
 
 /********************************************************
    Analog Schalter Read
 ******************************************************/
-const int analogPin = 0; // will be use in case of hardware
+const int analogPin = A0; // will be use in case of hardware
 int brewcounter = 0;
 int brewswitch = 0;
 
@@ -124,6 +127,9 @@ int preinfusion = 2000;
 int preinfusionpause = 5000;
 unsigned long bezugsZeit = 0;
 unsigned long startZeit = 0;
+
+// Filter
+int inX = 0, inY = 0, inOld = 0, inSum = 0;
 
 /********************************************************
    Sensor check
@@ -352,6 +358,17 @@ BLYNK_WRITE(V34) {
   brewboarder =  param.asDouble();
 }
 
+/********************************************************
+  nach ca. 28 Zyklen ist der input zu 99,99% erreicht
+*****************************************************/
+int filter(int input){
+  inX = input * 0.3;
+  inY = inOld * 0.7;
+  inSum = inX + inY;
+  inOld = inSum;
+  
+  return inSum;
+}
 
 /********************************************************
   Check if Wifi is connected, if not reconnect
@@ -574,10 +591,12 @@ void refreshTemp() {
 ******************************************************/
 void brew() {
   if (OnlyPID == 0) {
-    brewswitch = analogRead(analogPin);
+    brewswitch = filter(analogRead(analogPin));
     unsigned long aktuelleZeit = millis();
     if (brewswitch > 1000 && brewcounter == 0) {
       startZeit = millis();
+      heatingStart = startZeit;
+      preHeatingOutput = Output;
       brewcounter = brewcounter + 1;
     }
     if (brewcounter >= 1) {
@@ -600,17 +619,37 @@ void brew() {
         //DEBUG_println("Brew");
         digitalWrite(pinRelayVentil, relayON);
         digitalWrite(pinRelayPumpe, relayON);
+        bPID.SetMode(0);
+        Output = 1000 ;
       }
     } else {
       //DEBUG_println("aus");
       digitalWrite(pinRelayVentil, relayOFF);
       digitalWrite(pinRelayPumpe, relayOFF);
+      /*
+      heatingTime = (0.01083 * 4.190 * 60 * bezugsZeit);  //calculate necessary heating time
+      heatingTime = bezugsZeit;
+      */
     }
     if (brewswitch < 1000 && brewcounter >= 1) {
+      heatingTime = (0.01083 * 4.190 * 60 * bezugsZeit);  //calculate necessary heating time
       brewcounter = 0;
       aktuelleZeit = 0;
       bezugsZeit = 0;
     }
+    
+    if ((millis() - heatingStart >= heatingTime) && heatingTime > 0){
+      heatingTime = 0;
+      Output = preHeatingOutput;
+      bPID.SetMode(1);
+  /*
+      abhängig von PID mode!, sonst regler wieder ein, obwohl aus war, und der mode unten kanns nicht abfangen, weill der mode eben nicht richtig stehe:
+        } else if (pidON == 1 && pidMode == 0) {
+    pidMode = 1;
+    bPID.SetMode(pidMode);
+  }
+  */
+    }    
   }
 }
 
@@ -725,8 +764,7 @@ void printScreen() {
       }
     } else {
       display.print("Offlinemodus");
-    }
-
+    }    
     display.println("");
     display.println("");
     display.print("S:");
@@ -748,8 +786,12 @@ void printScreen() {
     //display.setCursor(0, 32);
     display.print("Q: ");
     display.print(Output / 10, 1);
-    display.println(" %");
-    display.println("");
+    display.print(" %, ");
+    display.print(bPID.GetKp(), 1);
+    display.print(",");
+    display.println(bPID.GetKp() / bPID.GetKi(), 0);
+    display.print("Heat_T: ");
+    display.println(heatingTime / 1000);
     display.print("Bezugszeit:");
     display.setTextSize(2);
     display.print(bezugsZeit / 1000);
@@ -830,7 +872,7 @@ void brewdetection() {
 void ICACHE_RAM_ATTR onTimer1ISR() {
   timer1_write(50000); // set interrupt time to 10ms
 
-  if (Output <= isrCounter) {
+  if (Output < isrCounter || Output == 0) {
     digitalWrite(pinRelayHeater, LOW);
     //DEBUG_println("Power off!");
   } else {
@@ -1062,7 +1104,7 @@ void setup() {
 }
 
 void loop() {
-  /*
+
   ArduinoOTA.handle();  // For OTA
   // Disable interrupt it OTA is starting, otherwise it will not work
   ArduinoOTA.onStart([](){
@@ -1076,7 +1118,7 @@ void loop() {
   ArduinoOTA.onEnd([](){
     timer1_enable(TIM_DIV16, TIM_EDGE, TIM_SINGLE);
   });
-*/
+
   if (WiFi.status() == WL_CONNECTED){
     Blynk.run(); //Do Blynk magic stuff
     wifiReconnects = 0;
@@ -1113,7 +1155,7 @@ void loop() {
       } else {
         startKi = 0 ;
       }
-      bPID.SetTunings(startKp, startKi, 0);
+      bPID.SetTunings(startKp, startKi, 0, P_ON_M);
     } else {
       // calc ki, kd
       if (aggTn != 0) {
@@ -1122,7 +1164,7 @@ void loop() {
         aggKi = 0 ;
       }
       aggKd = aggTv * aggKp ;
-      bPID.SetTunings(aggKp, aggKi, aggKd);
+      bPID.SetTunings(aggKp, aggKi, aggKd, PonE);
       kaltstart = false;
     }
 
