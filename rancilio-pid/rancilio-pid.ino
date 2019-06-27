@@ -969,29 +969,9 @@ void loop() {
   //Sicherheitsabfrage
   if (!sensorError && Input > 0 && !emergencyStop) {
 
-    //Set PID if first start of machine detected
-    if (Input < starttemp && kaltstart) {
-      if (startTn != 0) {
-        startKi = startKp / startTn;
-      } else {
-        startKi = 0 ;
-      }
-      bPID.SetTunings(startKp, startKi, 0);
-    } else {
-      // calc ki, kd
-      if (aggTn != 0) {
-        aggKi = aggKp / aggTn ;
-      } else {
-        aggKi = 0 ;
-      }
-      aggKd = aggTv * aggKp ;
-      bPID.SetTunings(aggKp, aggKi, aggKd);
-      kaltstart = false;
-    }
-
     //if brew detected, set PID values
     brewdetection();
-    if ( millis() - timeBrewdetection  < brewtimersoftware * 1000 && timerBrewdetection == 1) {
+    if ( millis() - timeBrewdetection  < brewtimersoftware * 1000 & Input >= starttemp) {
       // calc ki, kd
       if (aggbTn != 0) {
         aggbKi = aggbKp / aggbTn ;
@@ -1001,8 +981,25 @@ void loop() {
 
       aggbKd = aggbTv * aggbKp ;
       bPID.SetTunings(aggbKp, aggbKi, aggbKd) ;
+    } else if (Input >= starttemp || !kaltstart) {
+      // calc ki, kd
+      if (aggTn != 0) {
+        aggKi = aggKp / aggTn ;
+      } else {
+        aggKi = 0 ;
+      }
+      aggKd = aggTv * aggKp ;
+      bPID.SetTunings(aggKp, aggKi, aggKd);
+      kaltstart = false;
+    } else {
+      if (startTn != 0) {
+        startKi = startKp / startTn;
+      } else {
+        startKi = 0 ;
+      }
+      bPID.SetTunings(startKp, startKi, 0);
     }
-
+         
     sendToBlynk();
 
     //update display if time interval xpired
